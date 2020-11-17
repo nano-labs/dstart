@@ -141,6 +141,16 @@ def main():
 
     compose_files = args.file or ['docker-compose.yml']
     services = build_deps(compose_files)
+    services = [
+        ('api', ('elasticsearch', 'redis', 'mt_elasticsearch', 'postgres')),
+        ('celery_worker', ('postgres', 'redis', 'api')),
+        ('elasticsearch', ()),
+        ('kafka', ('zookeeper',)),
+        ('mt_elasticsearch', ()),
+        ('postgres', ()),
+        ('redis', ()),
+        ('zookeeper', ()),
+    ]
 
     cli = DependencyCheck(
         prompt="Press SPACEBAR to check which services you want run", check="> ", dep_tree=services
