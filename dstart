@@ -11,6 +11,20 @@ from bullet import Check, keyhandler, utils
 from bullet.charDef import SPACE_CHAR
 
 
+class MissingDependenciesError(Exception):
+    def __init__(self, missing_dependencies):
+        message = " ".join(
+            [
+                (
+                    "'{dependant}' depends on '{dependency}' but '{dependency}' "
+                    "was not provided."
+                ).format(dependant=dependant, dependency=dependency)
+                for dependant, dependency in missing_dependencies
+            ]
+        )
+        super().__init__(message)
+
+
 class DependencyCheck(Check):
     """Extend bullet.Check to follow dependencies."""
 
@@ -28,6 +42,7 @@ class DependencyCheck(Check):
         #    ^choices^    ^dependencies list^
         )
         """
+        self.validate_dependencies(dep_tree)
         self.dependencies = {k: v for k, v in dep_tree}
         self.dependants = defaultdict(set)
         for k, deps in dep_tree:
@@ -36,6 +51,16 @@ class DependencyCheck(Check):
         choices = [c[0] for c in dep_tree]
         super().__init__(prompt=prompt, choices=choices, *args, **kwargs)
 
+    def validate_dependencies(self, dep_tree):
+        missing_dependencies = []
+        items = [item for item, dependencies in dep_tree]
+        for item, dependencies in dep_tree:
+            for dep in dependencies:
+                if dep not in items:
+                    missing_dependencies.append((item, dep))
+        if missing_dependencies:
+            raise MissingDependenciesError(missing_dependencies)
+
     @keyhandler.register(SPACE_CHAR)
     def toggleRow(self):
         self.checked[self.pos] = not self.checked[self.pos]
@@ -43,20 +68,26 @@ class DependencyCheck(Check):
         if self.checked[self.pos]:
             self.check_dependencies(self.choices[self.pos])
         else:
-            self.clear_dependants(self.choices[self.pos])
+            self.uncheck_dependants(self.choices[self.pos])
         self.refresh()
 
-    def check_dependencies(self, choice):
+    def check_dependencies(self, choice, checks=None):
+        checks = checks or [choice]
         deps = self.dependencies[choice]
         for dep in deps:
-            self.checked[self.choices.index(dep)] = True
-            self.check_dependencies(dep)
+            if self.checked[self.choices.index(dep)] not in checks:
+                self.checked[self.choices.index(dep)] = True
+                checks.append(self.checked[self.choices.index(dep)])
+                self.check_dependencies(dep, checks)
 
-    def clear_dependants(self, choice):
+    def uncheck_dependants(self, choice, unchecks=None):
+        unchecks = unchecks or [choice]
         deps = self.dependants[choice]
         for dep in deps:
-            self.checked[self.choices.index(dep)] = False
-            self.clear_dependants(dep)
+            if self.checked[self.choices.index(dep)] not in unchecks:
+                self.checked[self.choices.index(dep)] = False
+                unchecks.append(self.checked[self.choices.index(dep)])
+                self.uncheck_dependants(dep, unchecks)
 
     def refresh(self):
         if not self.pos == 0:
